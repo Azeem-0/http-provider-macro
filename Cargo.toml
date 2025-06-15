@@ -1,6 +1,6 @@
 [package]
 name = "http-provider-macro"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["AzeemShaik azeemshaik025@gmail.com"]
 description = "A procedural macro for generating type-safe HTTP client providers"
