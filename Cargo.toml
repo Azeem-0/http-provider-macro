@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 keywords = ["http", "client", "macro", "rest", "api"]
 categories = ["web-programming::http-client", "development-tools"]
 readme = "README.md"
-documentation = "https://docs.rs/reqwest-derive"
+documentation = "https://docs.rs/http-provider-macro-test"
 
 [lib]
 proc-macro = true
