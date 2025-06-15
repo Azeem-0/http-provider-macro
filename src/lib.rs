@@ -150,6 +150,7 @@ use crate::{
     input::{EndpointDef, HttpMethod, HttpProviderInput},
 };
 use heck::ToSnakeCase;
+use proc_macro2::Span;
 use quote::quote;
 use regex::Regex;
 use syn::{parse_macro_input, Ident};
@@ -320,16 +321,29 @@ impl<'a> MethodExpander<'a> {
 
     /// Generates the function signature for an endpoint method.
     fn expand_fn_signature(&self) -> proc_macro2::TokenStream {
-        let path = self.def.path.value();
         let method = &self.def.method;
 
+        // Handle the function name logic based on whether path is provided
         let fn_name = if let Some(ref name) = self.def.fn_name {
             name.clone()
         } else {
             let method_str = format!("{:?}", method).to_lowercase();
-            let path_str = path.trim_start_matches('/').replace("/", "_");
-            let auto_name = format!("{}_{}", method_str, path_str).to_snake_case();
-            Ident::new(&auto_name, self.def.path.span())
+
+            // Handle the case where the path is optional
+            let auto_name = if let Some(ref path) = self.def.path {
+                let path_str = path.value().trim_start_matches('/').replace("/", "_");
+                format!("{}_{}", method_str, path_str).to_snake_case()
+            } else {
+                format!("{}_no_path", method_str).to_snake_case() // Default function name if no path
+            };
+
+            Ident::new(
+                &auto_name,
+                self.def
+                    .path
+                    .as_ref()
+                    .map_or_else(Span::call_site, |p| p.span()),
+            )
         };
 
         let res = &self.def.res;
@@ -356,7 +370,15 @@ impl<'a> MethodExpander<'a> {
 
     /// Generates URL construction logic, handling path parameter substitution.
     fn build_url_construction(&self) -> proc_macro2::TokenStream {
-        let path = self.def.path.value();
+        // If path is None, we just use the base URL as is.
+        let path = if let Some(ref path) = self.def.path {
+            path.value()
+        } else {
+            // If no path, just use the URL as is
+            return quote! {
+                let url = self.url.clone(); // Use the base URL as is
+            };
+        };
 
         if self.def.path_params.is_some() {
             let re = Regex::new(r"\{([a-zA-Z0-9_]+)\}").unwrap();

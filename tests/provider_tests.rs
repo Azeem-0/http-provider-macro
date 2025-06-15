@@ -20,7 +20,7 @@ mod tests {
                 headers : reqwest::header::HeaderMap,
                 query_params : MyQueryParams,
             },
-                 {
+            {
                 path: "/custom-path",
                 method: POST,
                 fn_name: post_b,
@@ -46,7 +46,12 @@ mod tests {
                 fn_name: get_user_by_id,
                 path_params: MyPathParams,
                 res: garden::api::primitives::Response<MyResponse>,
-            }
+            },
+            {
+                method: GET,
+                fn_name: get_user,
+                res: garden::api::primitives::Response<MyResponse>,
+            },
         }
 
     );

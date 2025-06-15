@@ -76,7 +76,7 @@ pub struct HttpProviderInput {
 /// a typed client method for making HTTP requests.
 ///
 /// # Fields
-/// * `path` - The URL path for the endpoint (e.g., "/api/users")
+/// * `path` - Optional URL path for the endpoint (e.g., "/api/users")
 /// * `method` - The HTTP method to use
 /// * `fn_name` - Optional custom name for the generated function
 /// * `req` - Optional request body type
@@ -85,7 +85,7 @@ pub struct HttpProviderInput {
 /// * `query_params` - Optional query parameters type
 /// * `path_params` - Optional path parameters type
 pub struct EndpointDef {
-    pub path: LitStr,
+    pub path: Option<LitStr>,
     pub method: HttpMethod,
     pub fn_name: Option<Ident>,
     pub req: Option<Type>,
@@ -168,7 +168,7 @@ impl Parse for EndpointDef {
         }
 
         Ok(EndpointDef {
-            path: path.ok_or_else(|| syn::Error::new(content.span(), "missing `path`"))?,
+            path,
             method: method.ok_or_else(|| syn::Error::new(content.span(), "missing `method`"))?,
             fn_name,
             req,
