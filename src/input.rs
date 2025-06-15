@@ -4,16 +4,34 @@ use syn::{
     punctuated::Punctuated,
     Ident, LitStr, Token, Type,
 };
-/// Enum for supported HTTP methods
+
+/// Represents HTTP methods supported by the provider macro.
+///
+/// These methods align with standard HTTP/1.1 methods and are used
+/// to define the type of request for each endpoint.
 #[derive(Debug, Clone)]
 pub enum HttpMethod {
+    /// HTTP GET method for retrieving resources
     GET,
+
+    /// HTTP POST method for creating resources
     POST,
+
+    /// HTTP PUT method for updating resources
     PUT,
+
+    /// HTTP DELETE method for removing resources
     DELETE,
 }
 
 impl Parse for HttpMethod {
+    /// Parses an HTTP method from the input stream.
+    ///
+    /// # Arguments
+    /// * `input` - The parse stream containing the method identifier
+    ///
+    /// # Returns
+    /// * `Result<Self>` - The parsed HTTP method or an error if method is unsupported
     fn parse(input: ParseStream) -> Result<Self> {
         let ident: Ident = input.parse()?;
         match ident.to_string().to_uppercase().as_str() {
@@ -29,14 +47,43 @@ impl Parse for HttpMethod {
     }
 }
 
-/// Parsed macro input:
-/// Contains the name of the provider struct and all endpoint definitions
+/// Root structure for parsing the HTTP provider macro input.
+///
+/// This structure represents the complete macro definition including
+/// the provider struct name and all its endpoint definitions.
+///
+/// # Example
+/// ```ignore
+/// MyApiClient, {
+///     {
+///         path: "/users",
+///         method: GET,
+///         res: Vec<User>
+///     }
+/// }
+/// ```
 pub struct HttpProviderInput {
+    /// Name of the provider struct that will be generated
     pub struct_name: Ident,
+
+    /// Collection of endpoint definitions
     pub endpoints: Vec<EndpointDef>,
 }
 
-/// Represents a single API endpoint definition
+/// Represents a single API endpoint configuration.
+///
+/// Each endpoint definition includes all necessary information to generate
+/// a typed client method for making HTTP requests.
+///
+/// # Fields
+/// * `path` - The URL path for the endpoint (e.g., "/api/users")
+/// * `method` - The HTTP method to use
+/// * `fn_name` - Optional custom name for the generated function
+/// * `req` - Optional request body type
+/// * `res` - Response type that will be deserialized
+/// * `headers` - Optional custom headers type
+/// * `query_params` - Optional query parameters type
+/// * `path_params` - Optional path parameters type
 pub struct EndpointDef {
     pub path: LitStr,
     pub method: HttpMethod,
@@ -49,6 +96,10 @@ pub struct EndpointDef {
 }
 
 impl Parse for HttpProviderInput {
+    /// Parses the complete macro input into a structured form.
+    ///
+    /// Expects input in the format:
+    /// `struct_name, { endpoint1, endpoint2, ... }`
     fn parse(input: ParseStream) -> Result<Self> {
         let struct_name: Ident = input.parse()?;
         input.parse::<Token![,]>()?;
@@ -66,6 +117,21 @@ impl Parse for HttpProviderInput {
 }
 
 impl Parse for EndpointDef {
+    /// Parses a single endpoint definition block.
+    ///
+    /// # Format
+    /// ```ignore
+    /// {
+    ///     path: "/path",
+    ///     method: GET,
+    ///     fn_name: custom_name,      // optional
+    ///     req: RequestType,          // optional
+    ///     res: ResponseType,         // required
+    ///     headers: HeadersType,      // optional
+    ///     query_params: QueryType,   // optional
+    ///     path_params: ParamsType    // optional
+    /// }
+    /// ```
     fn parse(input: ParseStream) -> Result<Self> {
         let content;
         braced!(content in input);

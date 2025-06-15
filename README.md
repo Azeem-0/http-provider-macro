@@ -1,22 +1,20 @@
-# http-provider-macro
+# HTTP Provider Macro
 
-[![Crates.io](https://img.shields.io/crates/v/http-provider-macro.svg)](https://crates.io/crates/http-provider-macro)
-[![Documentation](https://docs.rs/http-provider-macro/badge.svg)](https://docs.rs/http-provider-macro)
-[![License](https://img.shields.io/crates/l/http-provider-macro.svg)](https://github.com/azeem-0/http-provider-macro#license)
-
-A procedural macro for generating type-safe HTTP client providers in Rust. This crate allows you to declaratively define HTTP endpoints and automatically generates async client methods with proper error handling, serialization, and deserialization.
+A Rust procedural macro that generates HTTP client providers with compile-time endpoint definitions. This macro eliminates boilerplate code for creating HTTP clients by automatically generating methods for your API endpoints.
 
 ## Features
 
-- 🚀 **Declarative API**: Define HTTP endpoints using a simple macro syntax
-- 🔒 **Type Safety**: Compile-time guarantees for request/response types
-- ⚡ **Async/Await**: Built on `reqwest` with full async support
-- 🎯 **HTTP Methods**: Support for GET, POST, PUT, and DELETE
-- 📝 **Flexible Parameters**: Optional headers, query parameters, and request bodies
-- ⏱️ **Timeout Configuration**: Configurable request timeouts
-- 🛡️ **Error Handling**: Comprehensive error handling with detailed messages
+- 🚀 **Zero runtime overhead** - All HTTP client code is generated at compile time
+- 🔧 **Automatic method generation** - Function names auto-generated from HTTP method and path
+- 🎯 **Type-safe requests/responses** - Full Rust type checking for all parameters
+- 🌐 **Full HTTP method support** - GET, POST, PUT, DELETE
+- 📝 **Path parameters** - Dynamic URL path substitution with `{param}` syntax
+- 🔍 **Query parameters** - Automatic query string serialization
+- 📋 **Custom headers** - Per-request header support
+- ⚡ **Async/await** - Built on reqwest with full async support
+- ⏱️ **Configurable timeouts** - Per-client timeout configuration
 
-## Installation
+## Quick Start
 
 Add this to your `Cargo.toml`:
 
@@ -28,214 +26,264 @@ serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.0", features = ["full"] }
 ```
 
-## Quick Start
+## Basic Usage
 
 ```rust
 use http_provider_macro::http_provider;
 use serde::{Deserialize, Serialize};
-use reqwest::Url;
 
-// Define your request and response types
 #[derive(Serialize, Deserialize)]
+struct User {
+    id: u32,
+    name: String,
+    email: String,
+}
+
+#[derive(Serialize)]
 struct CreateUserRequest {
     name: String,
     email: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct User {
-    id: u64,
-    name: String,
-    email: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct UserQuery {
-    limit: u32,
-    offset: u32,
-}
-
-// Generate the HTTP client provider
+// Define your HTTP provider
 http_provider!(
-    UserApiClient,
+    UserApiProvider,
     {
         {
             path: "/users",
             method: GET,
-            fn_name: get_users,
             res: Vec<User>,
-            query_params: UserQuery,
         },
         {
             path: "/users",
             method: POST,
-            fn_name: create_user,
             req: CreateUserRequest,
             res: User,
         },
         {
             path: "/users/{id}",
             method: GET,
-            fn_name: get_user,
+            path_params: PathParams,
             res: User,
         }
     }
 );
 
+#[derive(Serialize)]
+struct PathParams {
+    id: u32,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize the client
-    let base_url = Url::parse("https://api.example.com")?;
-    let client = UserApiClient::new(base_url, 30); // 30 second timeout
+    let base_url = reqwest::Url::parse("https://api.example.com")?;
+    let client = UserApiProvider::new(base_url, 30); // 30 second timeout
 
-    // Create a new user
-    let new_user = CreateUserRequest {
+    // GET /users - auto-generated method name: get_users
+    let users = client.get_users().await?;
+    println!("Users: {:?}", users);
+
+    // POST /users - auto-generated method name: post_users  
+    let new_user = client.post_users(&CreateUserRequest {
         name: "John Doe".to_string(),
         email: "john@example.com".to_string(),
-    };
-    
-    let user = client.create_user(&new_user).await?;
-    println!("Created user: {:?}", user);
+    }).await?;
+    println!("Created user: {:?}", new_user);
 
-    // Get users with query parameters
-    let query = UserQuery { limit: 10, offset: 0 };
-    let users = client.get_users(query).await?;
-    println!("Users: {:?}", users);
+    // GET /users/{id} - auto-generated method name: get_users_id
+    let user = client.get_users_id(&PathParams { id: 1 }).await?;
+    println!("User: {:?}", user);
 
     Ok(())
 }
 ```
 
-## Macro Syntax
+## Endpoint Configuration
 
-The `http_provider!` macro takes a struct name followed by endpoint definitions:
+Each endpoint is defined within braces `{}` with the following fields:
 
-```rust
-http_provider!(
-    StructName,
-    {
-        {
-            path: "/endpoint/path",
-            method: HTTP_METHOD,
-            fn_name: function_name,
-            // Optional fields:
-            req: RequestType,
-            res: ResponseType,
-            headers: HeaderType,
-            query_params: QueryParamsType,
-        },
-        // ... more endpoints
-    }
-);
-```
+### Required Fields
 
-### Field Descriptions
+- **`path`**: The API endpoint path (string literal)
+- **`method`**: HTTP method (`GET`, `POST`, `PUT`, `DELETE`)  
+- **`res`**: Response type that implements `Deserialize`
 
-- **`path`** (required): The endpoint path relative to the base URL
-- **`method`** (required): HTTP method (`GET`, `POST`, `PUT`, `DELETE`)
-- **`fn_name`** (required): Name of the generated async function
-- **`req`** (optional): Request body type (for POST/PUT requests)
-- **`res`** (required): Response type that implements `Deserialize`
-- **`headers`** (optional): Headers type (typically `reqwest::header::HeaderMap`)
-- **`query_params`** (optional): Query parameters type that implements `Serialize`
+### Optional Fields
 
-## Advanced Usage
+- **`fn_name`**: Custom function name (defaults to auto-generated)
+- **`req`**: Request body type that implements `Serialize`
+- **`headers`**: Header type (typically `reqwest::header::HeaderMap`)
+- **`query_params`**: Query parameters type that implements `Serialize`
+- **`path_params`**: Path parameters type with fields matching `{param}` in path
 
-### With Headers and Query Parameters
+## Advanced Examples
+
+### Custom Function Names and Headers
 
 ```rust
 use reqwest::header::HeaderMap;
 
-#[derive(Serialize)]
-struct ApiQuery {
-    api_key: String,
-    version: String,
-}
-
 http_provider!(
-    ApiClient,
+    ApiProvider,
     {
         {
-            path: "/data",
+            path: "/protected/data",
             method: GET,
-            fn_name: get_data,
+            fn_name: fetch_protected_data,
             res: ApiResponse,
             headers: HeaderMap,
-            query_params: ApiQuery,
         }
     }
 );
 
 // Usage
 let mut headers = HeaderMap::new();
-headers.insert("authorization", "Bearer token".parse()?);
-
-let query = ApiQuery {
-    api_key: "your-key".to_string(),
-    version: "v1".to_string(),
-};
-
-let response = client.get_data(headers, query).await?;
+headers.insert("Authorization", "Bearer token123".parse()?);
+let data = client.fetch_protected_data(headers).await?;
 ```
 
-### Error Handling
-
-The generated methods return `Result<T, String>` where `T` is your response type:
+### Query Parameters
 
 ```rust
-match client.get_user().await {
-    Ok(user) => println!("User: {:?}", user),
-    Err(error) => eprintln!("Request failed: {}", error),
+#[derive(Serialize)]
+struct SearchQuery {
+    q: String,
+    limit: u32,
+    offset: u32,
 }
+
+http_provider!(
+    SearchProvider,
+    {
+        {
+            path: "/search",
+            method: GET,
+            query_params: SearchQuery,
+            res: SearchResults,
+        }
+    }
+);
+
+// Usage
+let results = client.get_search(&SearchQuery {
+    q: "rust".to_string(),
+    limit: 10,
+    offset: 0,
+}).await?;
 ```
 
-Common error scenarios:
-- Network connectivity issues
-- HTTP error status codes (4xx, 5xx)
-- JSON deserialization failures
-- Request timeout
+### Complex Path Parameters
 
-## Generated API
+```rust
+#[derive(Serialize)]
+struct ResourcePath {
+    user_id: u32,
+    resource_id: String,
+}
 
-For each endpoint, the macro generates:
+http_provider!(
+    ResourceProvider,
+    {
+        {
+            path: "/users/{user_id}/resources/{resource_id}",
+            method: GET,
+            path_params: ResourcePath,
+            res: Resource,
+        }
+    }
+);
 
-1. **Struct**: A client struct with `url`, `client`, and `timeout` fields
-2. **Constructor**: `new(url: Url, timeout: u64) -> Self`
-3. **Methods**: Async methods for each endpoint with appropriate parameters
+// Usage  
+let resource = client.get_users_user_id_resources_resource_id(&ResourcePath {
+    user_id: 123,
+    resource_id: "abc-def".to_string(),
+}).await?;
+```
 
-## Limitations
+### All Parameters Combined
 
-- Only supports JSON request/response bodies
-- Limited to GET, POST, PUT, and DELETE methods
-- Error type is currently `String` (will be improved in future versions)
-- No built-in retry or circuit breaker functionality
+```rust
+http_provider!(
+    CompleteProvider,
+    {
+        {
+            path: "/api/v1/users/{user_id}/posts",
+            method: POST,
+            fn_name: create_user_post,
+            path_params: UserPath,
+            req: CreatePostRequest,
+            res: Post,
+            headers: HeaderMap,
+            query_params: PostQuery,
+        }
+    }
+);
 
-## Examples
+// Usage
+let post = client.create_user_post(
+    &UserPath { user_id: 123 },
+    &CreatePostRequest { title: "Hello".to_string() },
+    headers,
+    &PostQuery { draft: false },
+).await?;
+```
 
-See the `tests/` directory for comprehensive examples including:
-- Basic CRUD operations
-- Custom headers and query parameters
-- Error handling scenarios
-- Mock server testing with WireMock
+## Generated Code Structure
 
-## Contributing
+The macro generates:
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+1. **Struct Definition**: A provider struct with `url`, `client`, and `timeout` fields
+2. **Constructor**: `new(url: reqwest::Url, timeout: u64) -> Self`
+3. **HTTP Methods**: One async method per endpoint definition
+
+### Method Signatures
+
+Generated methods follow this pattern:
+
+```rust
+pub async fn method_name(
+    &self,
+    path_params: &PathParamsType,    // if path_params specified
+    body: &RequestType,              // if req specified  
+    headers: HeaderMap,              // if headers specified
+    query: &QueryType,               // if query_params specified
+) -> Result<ResponseType, String>
+```
+
+### Auto-generated Function Names
+
+When `fn_name` is not specified, names are generated as:
+- `{method}_{path}` where path slashes become underscores
+- Examples:
+  - `GET /users` → `get_users`
+  - `POST /api/v1/posts` → `post_api_v1_posts`
+  - `PUT /users/{id}` → `put_users_id`
+
+## Error Handling
+
+All generated methods return `Result<T, String>` where errors include:
+
+- **URL construction errors**: Invalid path parameter substitution
+- **Network errors**: Connection timeouts, DNS failures, etc.
+- **HTTP errors**: Non-2xx status codes with status information
+- **Deserialization errors**: JSON parsing failures
+
+## Requirements
+
+- **Rust 1.70+**: For latest async/await and procedural macro features
+- **reqwest**: HTTP client library
+- **serde**: Serialization framework
+- **tokio**: Async runtime
 
 ## License
 
-This project is licensed under either of
+Licensed under either of
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT License ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+ * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
 
-## Changelog
+## Contributing
 
-### 0.1.0
-- Initial release
-- Support for GET, POST, PUT, DELETE methods
-- JSON request/response handling
-- Configurable timeouts
-- Optional headers and query parameters
+Contributions are welcome! Please feel free to submit a Pull Request.

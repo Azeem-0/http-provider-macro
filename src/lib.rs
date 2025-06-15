@@ -1,3 +1,148 @@
+//! # HTTP Provider Macro
+//!
+//! A procedural macro for generating HTTP client providers with compile-time endpoint definitions.
+//! This macro eliminates boilerplate code when creating HTTP clients by automatically generating
+//! methods for your API endpoints.
+//!
+//! ## Features
+//!
+//! - **Zero runtime overhead** - All HTTP client code is generated at compile time
+//! - **Automatic method generation** - Function names auto-generated from HTTP method and path
+//! - **Type-safe requests/responses** - Full Rust type checking for all parameters
+//! - **Full HTTP method support** - GET, POST, PUT, DELETE
+//! - **Path parameters** - Dynamic URL path substitution with `{param}` syntax
+//! - **Query parameters** - Automatic query string serialization
+//! - **Custom headers** - Per-request header support
+//! - **Async/await** - Built on reqwest with full async support
+//! - **Configurable timeouts** - Per-client timeout configuration
+//!
+//! ## Quick Start
+//!
+//! ```rust
+//! use http_provider_macro::http_provider;
+//! use serde::{Deserialize, Serialize};
+//!
+//! #[derive(Serialize, Deserialize, Debug)]
+//! struct User {
+//!     id: u32,
+//!     name: String,
+//! }
+//!
+//! #[derive(Serialize)]
+//! struct CreateUser {
+//!     name: String,
+//! }
+//!
+//! // Define your HTTP provider
+//! http_provider!(
+//!     UserApi,
+//!     {
+//!         {
+//!             path: "/users",
+//!             method: GET,
+//!             res: Vec<User>,
+//!         },
+//!         {
+//!             path: "/users",
+//!             method: POST,
+//!             req: CreateUser,
+//!             res: User,
+//!         }
+//!     }
+//! );
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let base_url = reqwest::Url::parse("https://api.example.com")?;
+//! let client = UserApi::new(base_url, 30);
+//!
+//! // Auto-generated methods
+//! let users = client.get_users().await?;
+//! let new_user = client.post_users(&CreateUser {
+//!     name: "John".to_string()
+//! }).await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Endpoint Configuration
+//!
+//! Each endpoint is defined within braces with these fields:
+//!
+//! ### Required Fields
+//! - `path`: API endpoint path (string literal)
+//! - `method`: HTTP method (GET, POST, PUT, DELETE)
+//! - `res`: Response type implementing `serde::Deserialize`
+//!
+//! ### Optional Fields
+//! - `fn_name`: Custom function name (auto-generated if omitted)
+//! - `req`: Request body type implementing `serde::Serialize`
+//! - `headers`: Header type (typically `reqwest::header::HeaderMap`)
+//! - `query_params`: Query parameters type implementing `serde::Serialize`
+//! - `path_params`: Path parameters type with fields matching `{param}` in path
+//!
+//! ## Examples
+//!
+//! ### Path Parameters
+//!
+//! ```rust
+//! # use http_provider_macro::http_provider;
+//! # use serde::{Deserialize, Serialize};
+//! #[derive(Serialize)]
+//! struct UserPath {
+//!     id: u32,
+//! }
+//!
+//! #[derive(Deserialize)]
+//! struct User {
+//!     id: u32,
+//!     name: String,
+//! }
+//!
+//! http_provider!(
+//!     UserApi,
+//!     {
+//!         {
+//!             path: "/users/{id}",
+//!             method: GET,
+//!             path_params: UserPath,
+//!             res: User,
+//!         }
+//!     }
+//! );
+//! ```
+//!
+//! ### Query Parameters and Headers
+//!
+//! ```rust
+//! # use http_provider_macro::http_provider;
+//! # use serde::{Deserialize, Serialize};
+//! # use reqwest::header::HeaderMap;
+//! #[derive(Serialize)]
+//! struct SearchQuery {
+//!     q: String,
+//!     limit: u32,
+//! }
+//!
+//! #[derive(Deserialize)]
+//! struct SearchResults {
+//!     results: Vec<String>,
+//! }
+//!
+//! http_provider!(
+//!     SearchApi,
+//!     {
+//!         {
+//!             path: "/search",
+//!             method: GET,
+//!             fn_name: search_items,
+//!             query_params: SearchQuery,
+//!             headers: HeaderMap,
+//!             res: SearchResults,
+//!         }
+//!     }
+//! );
+//! ```
+
 extern crate proc_macro;
 
 use crate::{
@@ -10,9 +155,80 @@ use regex::Regex;
 use syn::{parse_macro_input, Ident};
 
 mod error;
-mod generate;
 mod input;
 
+/// Generates an HTTP client provider struct with methods for each defined endpoint.
+///
+/// This macro takes a struct name and a list of endpoint definitions, generating
+/// a complete HTTP client with methods for each endpoint.
+///
+/// # Syntax
+///
+/// ```text
+/// http_provider!(
+///     StructName,
+///     {
+///         {
+///             path: "/endpoint/path",
+///             method: HTTP_METHOD,
+///             [fn_name: custom_function_name,]
+///             [req: RequestType,]
+///             res: ResponseType,
+///             [headers: HeaderType,]
+///             [query_params: QueryType,]
+///             [path_params: PathParamsType,]
+///         },
+///         // ... more endpoints
+///     }
+/// );
+/// ```
+///
+/// # Generated Structure
+///
+/// The macro generates:
+/// - A struct with `url`, `client`, and `timeout` fields
+/// - A `new(url: reqwest::Url, timeout: u64)` constructor
+/// - One async method per endpoint definition
+///
+/// # Method Naming
+///
+/// When `fn_name` is not provided, method names are auto-generated as:
+/// `{method}_{path}` where path separators become underscores.
+///
+/// # Examples
+///
+/// ```rust
+/// use http_provider_macro::http_provider;
+/// use serde::{Deserialize, Serialize};
+///
+/// #[derive(Serialize, Deserialize)]
+/// struct User {
+///     id: u32,
+///     name: String,
+/// }
+///
+/// http_provider!(
+///     UserClient,
+///     {
+///         {
+///             path: "/users",
+///             method: GET,
+///             res: Vec<User>,
+///         },
+///         {
+///             path: "/users/{id}",
+///             method: GET,
+///             path_params: UserPath,
+///             res: User,
+///         }
+///     }
+/// );
+///
+/// #[derive(Serialize)]
+/// struct UserPath {
+///     id: u32,
+/// }
+/// ```
 #[proc_macro]
 pub fn http_provider(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let parsed = parse_macro_input!(input as HttpProviderInput);
@@ -25,6 +241,7 @@ pub fn http_provider(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
     }
 }
 
+/// Main expander that generates the HTTP provider struct and its methods.
 struct HttpProviderMacroExpander;
 
 impl HttpProviderMacroExpander {
@@ -32,6 +249,7 @@ impl HttpProviderMacroExpander {
         Self
     }
 
+    /// Expands the macro input into a complete HTTP provider implementation.
     fn expand(&mut self, input: HttpProviderInput) -> MacroResult<proc_macro2::TokenStream> {
         if input.endpoints.is_empty() {
             return Err(MacroError::Custom {
@@ -56,9 +274,14 @@ impl HttpProviderMacroExpander {
             }
 
             impl #struct_name {
+                /// Creates a new HTTP provider instance.
+                ///
+                /// # Arguments
+                /// * `url` - Base URL for all requests
+                /// * `timeout` - Request timeout in milliseconds
                 pub fn new(url: reqwest::Url, timeout: u64) -> Self {
                     let client = reqwest::Client::new();
-                    let timeout = std::time::Duration::from_secs(timeout);
+                    let timeout = std::time::Duration::from_millis(timeout);
                     Self { url, client, timeout }
                 }
 
@@ -67,6 +290,7 @@ impl HttpProviderMacroExpander {
         })
     }
 
+    /// Generates a single HTTP method for an endpoint definition.
     fn expand_method(&self, endpoint: &EndpointDef) -> MacroResult<proc_macro2::TokenStream> {
         let method_expander = MethodExpander::new(endpoint);
 
@@ -84,7 +308,7 @@ impl HttpProviderMacroExpander {
         })
     }
 }
-
+/// Handles the expansion of individual HTTP method implementations
 struct MethodExpander<'a> {
     def: &'a EndpointDef,
 }
@@ -94,6 +318,7 @@ impl<'a> MethodExpander<'a> {
         Self { def }
     }
 
+    /// Generates the function signature for an endpoint method.
     fn expand_fn_signature(&self) -> proc_macro2::TokenStream {
         let path = self.def.path.value();
         let method = &self.def.method;
@@ -120,8 +345,8 @@ impl<'a> MethodExpander<'a> {
         if let Some(headers) = &self.def.headers {
             params.push(quote! { headers: #headers });
         }
-        if let Some(query) = &self.def.query_params {
-            params.push(quote! { query: #query });
+        if let Some(query_params) = &self.def.query_params {
+            params.push(quote! { query_params: &#query_params });
         }
 
         quote! {
@@ -129,6 +354,7 @@ impl<'a> MethodExpander<'a> {
         }
     }
 
+    /// Generates URL construction logic, handling path parameter substitution.
     fn build_url_construction(&self) -> proc_macro2::TokenStream {
         let path = self.def.path.value();
 
@@ -158,6 +384,7 @@ impl<'a> MethodExpander<'a> {
         }
     }
 
+    /// Generates request building logic including body, headers, and query parameters
     fn build_request(&self) -> proc_macro2::TokenStream {
         let method_call = match self.def.method {
             HttpMethod::GET => quote! { self.client.get(url) },
@@ -194,6 +421,7 @@ impl<'a> MethodExpander<'a> {
         }
     }
 
+    /// Generates response handling logic.
     fn build_response_handling(&self) -> proc_macro2::TokenStream {
         let res = &self.def.res;
 

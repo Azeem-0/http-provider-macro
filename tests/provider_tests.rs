@@ -110,7 +110,7 @@ mod tests {
                     query: "Helo".to_string(),
                 },
                 headers,
-                MyQueryParams {
+                &MyQueryParams {
                     query: "Helo".to_string(),
                 },
             )
