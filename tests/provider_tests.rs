@@ -38,12 +38,23 @@ mod tests {
                 path: "/custom-path",
                 method: DELETE,
                 fn_name: delete_d,
-                req: (),
+                res: garden::api::primitives::Response<MyResponse>,
+            },
+            {
+                path: "/custom-path/{id}",
+                method: GET,
+                fn_name: get_user_by_id,
+                path_params: MyPathParams,
                 res: garden::api::primitives::Response<MyResponse>,
             }
         }
 
     );
+
+    #[derive(Serialize, Deserialize)]
+    struct MyPathParams {
+        id: String,
+    }
 
     #[derive(Serialize, Deserialize)]
     struct MyQueryParams {
@@ -113,6 +124,54 @@ mod tests {
             result.result,
             Some(MyResponse {
                 value: "Hello world".to_string()
+            })
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_path_param_get_user_by_id() -> Result<(), Box<dyn std::error::Error>> {
+        use wiremock::matchers::{method, path_regex};
+
+        // Start the mock server
+        let mock_server = MockServer::start().await;
+
+        // Define expected response
+        let response = Response::<MyResponse> {
+            status: Status::Ok,
+            result: Some(MyResponse {
+                value: "User42".to_string(),
+            }),
+            error: None,
+        };
+
+        // Set up a mock that matches the dynamic path
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/custom-path/\w+$")) // Accepts any /users/{id}
+            .respond_with(ResponseTemplate::new(200).set_body_json(response))
+            .mount(&mock_server)
+            .await;
+
+        let url = Url::from_str(&mock_server.uri())?;
+
+        let provider = HttpProvider::new(url, 5);
+
+        // Call the generated GET method with path params
+        let path_params = MyPathParams {
+            id: "42".to_string(),
+        };
+
+        let result = provider.get_user_by_id(&path_params).await?;
+
+        println!("Result : {:#?}", result);
+
+        // Assert expected response
+        assert_eq!(result.status, Status::Ok);
+        assert_eq!(
+            result.result,
+            Some(MyResponse {
+                value: "User42".to_string()
             })
         );
 

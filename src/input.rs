@@ -4,7 +4,7 @@ use syn::{
     punctuated::Punctuated,
     Ident, LitStr, Token, Type,
 };
-
+/// Enum for supported HTTP methods
 #[derive(Debug, Clone)]
 pub enum HttpMethod {
     GET,
@@ -29,22 +29,26 @@ impl Parse for HttpMethod {
     }
 }
 
-pub struct HttpProviderDef {
+/// Parsed macro input:
+/// Contains the name of the provider struct and all endpoint definitions
+pub struct HttpProviderInput {
     pub struct_name: Ident,
     pub endpoints: Vec<EndpointDef>,
 }
 
+/// Represents a single API endpoint definition
 pub struct EndpointDef {
     pub path: LitStr,
     pub method: HttpMethod,
-    pub fn_name: Ident,
+    pub fn_name: Option<Ident>,
     pub req: Option<Type>,
     pub res: Type,
     pub headers: Option<Type>,
     pub query_params: Option<Type>,
+    pub path_params: Option<Type>,
 }
 
-impl Parse for HttpProviderDef {
+impl Parse for HttpProviderInput {
     fn parse(input: ParseStream) -> Result<Self> {
         let struct_name: Ident = input.parse()?;
         input.parse::<Token![,]>()?;
@@ -53,6 +57,7 @@ impl Parse for HttpProviderDef {
         braced!(content in input);
         let items: Punctuated<EndpointDef, Token![,]> =
             content.parse_terminated(EndpointDef::parse, Token![,])?;
+
         Ok(Self {
             struct_name,
             endpoints: items.into_iter().collect(),
@@ -72,7 +77,9 @@ impl Parse for EndpointDef {
         let mut res = None;
         let mut headers = None;
         let mut query_params = None;
+        let mut path_params = None;
 
+        // Iteratively parse each key-value pair inside the endpoint block
         while !content.is_empty() {
             let field: Ident = content.parse()?;
             content.parse::<Token![:]>()?;
@@ -85,6 +92,7 @@ impl Parse for EndpointDef {
                 "res" => res = Some(content.parse()?),
                 "headers" => headers = Some(content.parse()?),
                 "query_params" => query_params = Some(content.parse()?),
+                "path_params" => path_params = Some(content.parse()?),
                 _ => return Err(syn::Error::new(field.span(), "unexpected field")),
             }
 
@@ -96,11 +104,12 @@ impl Parse for EndpointDef {
         Ok(EndpointDef {
             path: path.ok_or_else(|| syn::Error::new(content.span(), "missing `path`"))?,
             method: method.ok_or_else(|| syn::Error::new(content.span(), "missing `method`"))?,
-            fn_name: fn_name.ok_or_else(|| syn::Error::new(content.span(), "missing `fn_name`"))?,
+            fn_name,
             req,
             res: res.ok_or_else(|| syn::Error::new(content.span(), "missing `res`"))?,
             headers,
             query_params,
+            path_params,
         })
     }
 }

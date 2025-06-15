@@ -1,189 +1,241 @@
-# reqwest-derive
+# http-provider-macro
 
-[![Crates.io](https://img.shields.io/crates/v/reqwest-derive.svg)](https://crates.io/crates/reqwest-derive)
-[![Documentation](https://docs.rs/reqwest-derive/badge.svg)](https://docs.rs/reqwest-derive)
-[![License](https://img.shields.io/crates/l/reqwest-derive.svg)](https://github.com/yourusername/reqwest-derive#license)
-[![Build Status](https://github.com/yourusername/reqwest-derive/workflows/CI/badge.svg)](https://github.com/yourusername/reqwest-derive/actions)
+[![Crates.io](https://img.shields.io/crates/v/http-provider-macro.svg)](https://crates.io/crates/http-provider-macro)
+[![Documentation](https://docs.rs/http-provider-macro/badge.svg)](https://docs.rs/http-provider-macro)
+[![License](https://img.shields.io/crates/l/http-provider-macro.svg)](https://github.com/azeem-0/http-provider-macro#license)
 
-A procedural macro that automatically generates HTTP API client methods for your structs using `reqwest`. Say goodbye to boilerplate HTTP client code!
+A procedural macro for generating type-safe HTTP client providers in Rust. This crate allows you to declaratively define HTTP endpoints and automatically generates async client methods with proper error handling, serialization, and deserialization.
 
 ## Features
 
-- 🚀 **Zero boilerplate** - Just annotate your response structs
-- 🔧 **Configurable timeouts** - Set per-endpoint timeouts
-- 🛡️ **Error handling** - Comprehensive error messages with context  
-- 📦 **Easy integration** - Works seamlessly with existing `reqwest` and `serde` code
-- ⚡ **Async/await ready** - Built for modern async Rust
-- 🧪 **Well tested** - Comprehensive test suite with mock servers
+- 🚀 **Declarative API**: Define HTTP endpoints using a simple macro syntax
+- 🔒 **Type Safety**: Compile-time guarantees for request/response types
+- ⚡ **Async/Await**: Built on `reqwest` with full async support
+- 🎯 **HTTP Methods**: Support for GET, POST, PUT, and DELETE
+- 📝 **Flexible Parameters**: Optional headers, query parameters, and request bodies
+- ⏱️ **Timeout Configuration**: Configurable request timeouts
+- 🛡️ **Error Handling**: Comprehensive error handling with detailed messages
 
-## Quick Start
+## Installation
 
 Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-reqwest-derive = "0.1"
+http-provider-macro = "0.1.0"
+reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.0", features = ["full"] }
 ```
 
-## Usage
+## Quick Start
 
 ```rust
-use reqwest_derive::Provider;
-use serde::Deserialize;
+use http_provider_macro::http_provider;
+use serde::{Deserialize, Serialize};
+use reqwest::Url;
 
-#[derive(Deserialize, Debug)]
-#[provider(url = "https://api.github.com/users/octocat", timeout = 10)]
-struct GitHubUser {
-    pub login: String,
-    pub id: u64,
-    pub avatar_url: String,
+// Define your request and response types
+#[derive(Serialize, Deserialize)]
+struct CreateUserRequest {
+    name: String,
+    email: String,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+struct User {
+    id: u64,
+    name: String,
+    email: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct UserQuery {
+    limit: u32,
+    offset: u32,
+}
+
+// Generate the HTTP client provider
+http_provider!(
+    UserApiClient,
+    {
+        {
+            path: "/users",
+            method: GET,
+            fn_name: get_users,
+            res: Vec<User>,
+            query_params: UserQuery,
+        },
+        {
+            path: "/users",
+            method: POST,
+            fn_name: create_user,
+            req: CreateUserRequest,
+            res: User,
+        },
+        {
+            path: "/users/{id}",
+            method: GET,
+            fn_name: get_user,
+            res: User,
+        }
+    }
+);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // The macro automatically generates a `fetch()` method
-    let user = GitHubUser::fetch().await?;
-    println!("User: {} (ID: {})", user.login, user.id);
+    // Initialize the client
+    let base_url = Url::parse("https://api.example.com")?;
+    let client = UserApiClient::new(base_url, 30); // 30 second timeout
+
+    // Create a new user
+    let new_user = CreateUserRequest {
+        name: "John Doe".to_string(),
+        email: "john@example.com".to_string(),
+    };
+    
+    let user = client.create_user(&new_user).await?;
+    println!("Created user: {:?}", user);
+
+    // Get users with query parameters
+    let query = UserQuery { limit: 10, offset: 0 };
+    let users = client.get_users(query).await?;
+    println!("Users: {:?}", users);
+
     Ok(())
 }
 ```
 
-## Advanced Usage
+## Macro Syntax
 
-### Custom HTTP Client
+The `http_provider!` macro takes a struct name followed by endpoint definitions:
 
 ```rust
-use reqwest::Client;
+http_provider!(
+    StructName,
+    {
+        {
+            path: "/endpoint/path",
+            method: HTTP_METHOD,
+            fn_name: function_name,
+            // Optional fields:
+            req: RequestType,
+            res: ResponseType,
+            headers: HeaderType,
+            query_params: QueryParamsType,
+        },
+        // ... more endpoints
+    }
+);
+```
 
-// Use a custom client with specific configuration
-let client = Client::builder()
-    .user_agent("my-app/1.0")
-    .build()?;
-    
-let user = GitHubUser::fetch_with_client(&client).await?;
+### Field Descriptions
+
+- **`path`** (required): The endpoint path relative to the base URL
+- **`method`** (required): HTTP method (`GET`, `POST`, `PUT`, `DELETE`)
+- **`fn_name`** (required): Name of the generated async function
+- **`req`** (optional): Request body type (for POST/PUT requests)
+- **`res`** (required): Response type that implements `Deserialize`
+- **`headers`** (optional): Headers type (typically `reqwest::header::HeaderMap`)
+- **`query_params`** (optional): Query parameters type that implements `Serialize`
+
+## Advanced Usage
+
+### With Headers and Query Parameters
+
+```rust
+use reqwest::header::HeaderMap;
+
+#[derive(Serialize)]
+struct ApiQuery {
+    api_key: String,
+    version: String,
+}
+
+http_provider!(
+    ApiClient,
+    {
+        {
+            path: "/data",
+            method: GET,
+            fn_name: get_data,
+            res: ApiResponse,
+            headers: HeaderMap,
+            query_params: ApiQuery,
+        }
+    }
+);
+
+// Usage
+let mut headers = HeaderMap::new();
+headers.insert("authorization", "Bearer token".parse()?);
+
+let query = ApiQuery {
+    api_key: "your-key".to_string(),
+    version: "v1".to_string(),
+};
+
+let response = client.get_data(headers, query).await?;
 ```
 
 ### Error Handling
 
-The generated methods return detailed errors:
+The generated methods return `Result<T, String>` where `T` is your response type:
 
 ```rust
-match GitHubUser::fetch().await {
-    Ok(user) => println!("Success: {:?}", user),
-    Err(e) => {
-        eprintln!("Failed to fetch user: {}", e);
-        // Error messages include URL and detailed context
-    }
+match client.get_user().await {
+    Ok(user) => println!("User: {:?}", user),
+    Err(error) => eprintln!("Request failed: {}", error),
 }
 ```
 
-## Macro Attributes
+Common error scenarios:
+- Network connectivity issues
+- HTTP error status codes (4xx, 5xx)
+- JSON deserialization failures
+- Request timeout
 
-### `#[provider]`
+## Generated API
 
-The main attribute that generates the HTTP client implementation.
+For each endpoint, the macro generates:
 
-#### Parameters
+1. **Struct**: A client struct with `url`, `client`, and `timeout` fields
+2. **Constructor**: `new(url: Url, timeout: u64) -> Self`
+3. **Methods**: Async methods for each endpoint with appropriate parameters
 
-- `url` (required): The API endpoint URL as a string literal
-- `timeout` (optional): Request timeout in seconds (default: 30)
+## Limitations
 
-#### Examples
-
-```rust
-// Basic usage
-#[provider(url = "https://api.example.com/data")]
-struct ApiResponse {
-    data: String,
-}
-
-// With custom timeout
-#[provider(url = "https://api.example.com/data", timeout = 5)]
-struct FastApiResponse {
-    result: Vec<String>,
-}
-```
-
-## Generated Methods
-
-For each struct annotated with `#[provider]`, the following methods are generated:
-
-### `fetch() -> Result<Self, Box<dyn std::error::Error>>`
-
-Creates a new HTTP client and fetches the data.
-
-### `fetch_with_client(client: &reqwest::Client) -> Result<Self, Box<dyn std::error::Error>>`
-
-Uses the provided HTTP client to fetch the data. Useful for sharing clients across multiple requests or when you need custom client configuration.
-
-## Error Types
-
-The generated methods can return these error types:
-
-- **Network errors**: Connection failures, DNS resolution issues
-- **Timeout errors**: When requests exceed the specified timeout
-- **HTTP errors**: 4xx and 5xx status codes with detailed messages
-- **Deserialization errors**: JSON parsing or type conversion failures
-
-All errors include contextual information like the URL and specific failure reason.
-
-## Requirements
-
-- Rust 1.56+ (2021 edition)
-- Your response structs must implement `serde::Deserialize`
-- Requires `tokio` runtime for async execution
+- Only supports JSON request/response bodies
+- Limited to GET, POST, PUT, and DELETE methods
+- Error type is currently `String` (will be improved in future versions)
+- No built-in retry or circuit breaker functionality
 
 ## Examples
 
-Check out the [`examples/`](examples/) directory for more comprehensive usage examples:
-
-- [Basic usage](examples/basic.rs)
-- [Multiple endpoints](examples/multiple_endpoints.rs)
-- [Custom client configuration](examples/custom_client.rs)
-- [Error handling](examples/error_handling.rs)
+See the `tests/` directory for comprehensive examples including:
+- Basic CRUD operations
+- Custom headers and query parameters
+- Error handling scenarios
+- Mock server testing with WireMock
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
-### Development Setup
-
-```bash
-git clone https://github.com/yourusername/reqwest-derive.git
-cd reqwest-derive
-cargo test
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run tests with output
-cargo test -- --nocapture
-
-# Run integration tests
-cargo test --test integration_tests
-```
-
 ## License
 
 This project is licensed under either of
 
-- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT License ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for a detailed changelog.
-
-## Acknowledgments
-
-- Built on top of the excellent [`reqwest`](https://github.com/seanmonstar/reqwest) HTTP client
-- Inspired by the need to reduce boilerplate in microservice architectures
-- Thanks to the Rust community for feedback and contributions
+### 0.1.0
+- Initial release
+- Support for GET, POST, PUT, DELETE methods
+- JSON request/response handling
+- Configurable timeouts
+- Optional headers and query parameters
