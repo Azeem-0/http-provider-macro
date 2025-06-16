@@ -153,7 +153,7 @@ use heck::ToSnakeCase;
 use proc_macro2::Span;
 use quote::quote;
 use regex::Regex;
-use syn::{parse_macro_input, Ident};
+use syn::{parse_macro_input, spanned::Spanned, Ident};
 
 mod error;
 mod input;
@@ -264,7 +264,15 @@ impl HttpProviderMacroExpander {
         let methods: Vec<proc_macro2::TokenStream> = input
             .endpoints
             .iter()
+            .filter(|endpoint| endpoint.trait_impl.is_none())
             .map(|endpoint| self.expand_method(endpoint))
+            .collect::<Result<_, _>>()?;
+
+        let trait_methods: Vec<proc_macro2::TokenStream> = input
+            .endpoints
+            .iter()
+            .filter(|endpoint| endpoint.trait_impl.is_some())
+            .map(|endpoint| self.expand_trait_method(&struct_name, endpoint))
             .collect::<Result<_, _>>()?;
 
         Ok(quote! {
@@ -287,6 +295,30 @@ impl HttpProviderMacroExpander {
                 }
 
                 #(#methods)*
+            }
+
+            #(#trait_methods)*
+        })
+    }
+
+    fn expand_trait_method(
+        &self,
+        struct_name: &Ident,
+        endpoint: &EndpointDef,
+    ) -> MacroResult<proc_macro2::TokenStream> {
+        let method = self.expand_method(endpoint)?;
+
+        let trait_impl = endpoint
+            .trait_impl
+            .as_ref()
+            .ok_or_else(|| MacroError::Custom {
+                message: "Trait impl is not configured".to_string(),
+                span: method.span(),
+            })?;
+
+        Ok(quote! {
+            impl #trait_impl for #struct_name {
+                #method
             }
         })
     }
@@ -363,8 +395,16 @@ impl<'a> MethodExpander<'a> {
             params.push(quote! { query_params: &#query_params });
         }
 
-        quote! {
-            pub async fn #fn_name(&self, #(#params),*) -> Result<#res, String>
+        // Determine if this is for a trait implementation
+        let is_trait_impl = self.def.trait_impl.is_some();
+        if is_trait_impl {
+            quote! {
+                async fn #fn_name(&self, #(#params),*) -> Result<#res,String>
+            }
+        } else {
+            quote! {
+                pub async fn #fn_name(&self, #(#params),*) -> Result<#res, String>
+            }
         }
     }
 

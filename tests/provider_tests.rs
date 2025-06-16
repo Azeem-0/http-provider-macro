@@ -51,10 +51,15 @@ mod tests {
                 method: GET,
                 fn_name: get_user,
                 res: garden::api::primitives::Response<MyResponse>,
+                trait_impl : MyProvider,
             },
         }
 
     );
+
+    trait MyProvider {
+        async fn get_user(&self) -> Result<garden::api::primitives::Response<MyResponse>, String>;
+    }
 
     #[derive(Serialize, Deserialize)]
     struct MyPathParams {

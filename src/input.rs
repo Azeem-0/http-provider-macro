@@ -78,6 +78,7 @@ pub struct HttpProviderInput {
 /// # Fields
 /// * `path` - Optional URL path for the endpoint (e.g., "/api/users")
 /// * `method` - The HTTP method to use
+/// * `trait_impl` - Optional Trait for the method to implement.
 /// * `fn_name` - Optional custom name for the generated function
 /// * `req` - Optional request body type
 /// * `res` - Response type that will be deserialized
@@ -87,6 +88,7 @@ pub struct HttpProviderInput {
 pub struct EndpointDef {
     pub path: Option<LitStr>,
     pub method: HttpMethod,
+    pub trait_impl: Option<Type>,
     pub fn_name: Option<Ident>,
     pub req: Option<Type>,
     pub res: Type,
@@ -138,6 +140,7 @@ impl Parse for EndpointDef {
 
         let mut path = None;
         let mut method = None;
+        let mut trait_impl = None;
         let mut fn_name = None;
         let mut req = None;
         let mut res = None;
@@ -153,6 +156,7 @@ impl Parse for EndpointDef {
             match field.to_string().as_str() {
                 "path" => path = Some(content.parse()?),
                 "method" => method = Some(content.parse()?),
+                "trait_impl" => trait_impl = Some(content.parse()?),
                 "fn_name" => fn_name = Some(content.parse()?),
                 "req" => req = Some(content.parse()?),
                 "res" => res = Some(content.parse()?),
@@ -170,6 +174,7 @@ impl Parse for EndpointDef {
         Ok(EndpointDef {
             path,
             method: method.ok_or_else(|| syn::Error::new(content.span(), "missing `method`"))?,
+            trait_impl,
             fn_name,
             req,
             res: res.ok_or_else(|| syn::Error::new(content.span(), "missing `res`"))?,
