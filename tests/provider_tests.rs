@@ -102,7 +102,7 @@ mod tests {
             .await;
 
         let url = Url::from_str(&mock_server.uri())?;
-        let provider = HttpProvider::new(url, 5);
+        let provider = HttpProvider::new(url, Some(5000));
 
         // Create headers with a custom value
         let mut headers = HeaderMap::new();
@@ -160,7 +160,7 @@ mod tests {
 
         let url = Url::from_str(&mock_server.uri())?;
 
-        let provider = HttpProvider::new(url, 5);
+        let provider = HttpProvider::new(url, Some(5000));
 
         // Call the generated GET method with path params
         let path_params = MyPathParams {
@@ -207,7 +207,7 @@ mod tests {
         let url = Url::from_str(&mock_server.uri())?;
 
         // Instantiate the provider (using the macro-generated OrderbookProvider)
-        let provider = HttpProvider::new(url, 5);
+        let provider = HttpProvider::new(url, Some(5000));
 
         // Prepare the request body
         let req = MyRequest {
@@ -249,7 +249,7 @@ mod tests {
             .await;
 
         let url = reqwest::Url::from_str(&mock_server.uri())?;
-        let provider = HttpProvider::new(url, 5);
+        let provider = HttpProvider::new(url, Some(5000));
 
         let req = MyRequest {
             query: "test put".to_string(),
@@ -284,7 +284,7 @@ mod tests {
             .await;
 
         let url = reqwest::Url::from_str(&mock_server.uri())?;
-        let provider = HttpProvider::new(url, 5);
+        let provider = HttpProvider::new(url, Some(5000));
 
         let result = provider.delete_d().await?;
 

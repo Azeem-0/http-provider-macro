@@ -53,7 +53,7 @@
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let base_url = reqwest::Url::parse("https://api.example.com")?;
-//! let client = UserApi::new(base_url, 30);
+//! let client = UserApi::new(base_url, Some(30));
 //!
 //! // Auto-generated methods
 //! let users = client.get_users().await?;
@@ -69,11 +69,11 @@
 //! Each endpoint is defined within braces with these fields:
 //!
 //! ### Required Fields
-//! - `path`: API endpoint path (string literal)
 //! - `method`: HTTP method (GET, POST, PUT, DELETE)
 //! - `res`: Response type implementing `serde::Deserialize`
 //!
 //! ### Optional Fields
+//! - `path`: API endpoint path (string literal)
 //! - `fn_name`: Custom function name (auto-generated if omitted)
 //! - `req`: Request body type implementing `serde::Serialize`
 //! - `headers`: Header type (typically `reqwest::header::HeaderMap`)
@@ -162,74 +162,6 @@ mod input;
 ///
 /// This macro takes a struct name and a list of endpoint definitions, generating
 /// a complete HTTP client with methods for each endpoint.
-///
-/// # Syntax
-///
-/// ```text
-/// http_provider!(
-///     StructName,
-///     {
-///         {
-///             path: "/endpoint/path",
-///             method: HTTP_METHOD,
-///             [fn_name: custom_function_name,]
-///             [req: RequestType,]
-///             res: ResponseType,
-///             [headers: HeaderType,]
-///             [query_params: QueryType,]
-///             [path_params: PathParamsType,]
-///         },
-///         // ... more endpoints
-///     }
-/// );
-/// ```
-///
-/// # Generated Structure
-///
-/// The macro generates:
-/// - A struct with `url`, `client`, and `timeout` fields
-/// - A `new(url: reqwest::Url, timeout: u64)` constructor
-/// - One async method per endpoint definition
-///
-/// # Method Naming
-///
-/// When `fn_name` is not provided, method names are auto-generated as:
-/// `{method}_{path}` where path separators become underscores.
-///
-/// # Examples
-///
-/// ```rust
-/// use http_provider_macro::http_provider;
-/// use serde::{Deserialize, Serialize};
-///
-/// #[derive(Serialize, Deserialize)]
-/// struct User {
-///     id: u32,
-///     name: String,
-/// }
-///
-/// http_provider!(
-///     UserClient,
-///     {
-///         {
-///             path: "/users",
-///             method: GET,
-///             res: Vec<User>,
-///         },
-///         {
-///             path: "/users/{id}",
-///             method: GET,
-///             path_params: UserPath,
-///             res: User,
-///         }
-///     }
-/// );
-///
-/// #[derive(Serialize)]
-/// struct UserPath {
-///     id: u32,
-/// }
-/// ```
 #[proc_macro]
 pub fn http_provider(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let parsed = parse_macro_input!(input as HttpProviderInput);
@@ -279,10 +211,10 @@ impl HttpProviderMacroExpander {
                 ///
                 /// # Arguments
                 /// * `url` - Base URL for all requests
-                /// * `timeout` - Request timeout in milliseconds
-                pub fn new(url: reqwest::Url, timeout: u64) -> Self {
+                /// * `timeout` - Optional request timeout in milliseconds
+                pub fn new(url: reqwest::Url, timeout: Option<u64>) -> Self {
                     let client = reqwest::Client::new();
-                    let timeout = std::time::Duration::from_millis(timeout);
+                    let timeout = std::time::Duration::from_millis(timeout.unwrap_or(5000));
                     Self { url, client, timeout }
                 }
 
